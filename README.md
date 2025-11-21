@@ -20,6 +20,8 @@ Environment:
 - `zeno add` loads a small input form, where you enter a short title for your command plus the command itself (command is taken from clipboard if already copied) and the language. The languages have smart sorting and the right one should be on top. OpenAI completion endpoints will then phrase a short description of the command add some keywords, and the record is saved to MySQL/MariaDB.
 
 ## Deps & Installation
+
 You need Go and MariaDB and have to have the DB set up. Create a DB and user, then import the schema from the repo you clone with `git clone https://github.com/fsncps/zeno`.
 Then, to install just cd into the repo root and run `make` and `make install`.
+
 ---
