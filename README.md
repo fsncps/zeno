@@ -5,7 +5,8 @@ A tiny but super simple and fast command and code snippet cheat sheet manager to
 ## Usage
 ```
 $ zeno help
-Zeno is a command and snippet cheat sheet manager. Write your pet peeve commands to a DB with sexy lipgloss on them and and retrieve when needed.
+Zeno is a command and snippet cheat sheet manager.
+Write your pet peeve commands to a DB with sexy lipgloss on them and and retrieve when needed.
 
 Usage:
   zeno            Start search UI
