@@ -1,11 +1,11 @@
 # zeno
 
-A tiny but super simple and fast cheat sheet and snippet manager to build a custom database with the oft-used commands, becuase it feels better than asking ChatGPT every time. Designed to be lean and as efficient as possible. Made with Go and the [Charm/huh/lipgloss](https://github.com/charmbracelet/lipgloss) libs.
+A tiny but super simple and fast command and code snippet cheat sheet manager to build a custom database with the oft-used commands, becuase it feels better than asking ChatGPT every time. Designed to be lean and as efficient as possible. Made with Go and the [Charm/huh/lipgloss](https://github.com/charmbracelet/lipgloss) libs.
 
 ## Usage
 ```
 $ zeno help
-zeno - command snippet search & add TUI
+Zeno is a command and snippet cheat sheet manager. Write your pet peeve commands to a DB with sexy lipgloss on them and and retrieve when needed.
 
 Usage:
   zeno            Start search UI
