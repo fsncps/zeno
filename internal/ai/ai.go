@@ -9,12 +9,12 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// SummarizeAndKeywords asks the model to produce a clean title (Title Case),
-// an encyclopaedic description, and a list of keywords for a command snippet.
-func SummarizeAndKeywords(title, code string) (string, string, []string, error) {
+// SummarizeAndKeywords returns description (<=100 words) and 5–8 keywords.
+// Output is exactly two sections separated by a blank line.
+func SummarizeAndKeywords(title, code string) (string, []string, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return "", "", nil, fmt.Errorf("OPENAI_API_KEY not set")
+		return "", nil, fmt.Errorf("OPENAI_API_KEY not set")
 	}
 
 	client := openai.NewClient(apiKey)
@@ -24,7 +24,7 @@ You must produce for a reference work:
 
 • A concise, encyclopaedic description using a maximum of 100 words.
 
-• A list of 5-8 keywords, separated by commas.
+• A list of the 5 most relevant keywords, separated by commas.
 
 Do not prefix lines with bullets, numbers, colons, or any other symbols.
 Use encyclopedic language, prefer subjectless, elliptical sentences.
@@ -55,30 +55,24 @@ Code:
 		},
 	)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 
 	output := strings.TrimSpace(resp.Choices[0].Message.Content)
 
-	// Split into three sections
-	sections := strings.SplitN(output, "\n\n", 3)
-	if len(sections) < 3 {
-		return "", "", nil, fmt.Errorf("unexpected AI output:\n%s", output)
+	parts := strings.SplitN(output, "\n\n", 2)
+	if len(parts) != 2 {
+		return "", nil, fmt.Errorf("unexpected AI output:\n%s", output)
 	}
+	description := strings.TrimSpace(parts[0])
+	kwsRaw := strings.TrimSpace(parts[1])
 
-	refinedTitle := strings.TrimSpace(sections[0])
-	description := strings.TrimSpace(sections[1])
-	keywordStr := strings.TrimSpace(sections[2])
-
-	// Parse keywords
-	kwParts := strings.Split(keywordStr, ",")
 	var keywords []string
-	for _, kw := range kwParts {
-		kw = strings.TrimSpace(kw)
-		if kw != "" {
-			keywords = append(keywords, kw)
+	for _, kw := range strings.Split(kwsRaw, ",") {
+		if s := strings.TrimSpace(kw); s != "" {
+			keywords = append(keywords, s)
 		}
 	}
-
-	return refinedTitle, description, keywords, nil
+	return description, keywords, nil
 }
+
