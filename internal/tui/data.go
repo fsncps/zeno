@@ -25,7 +25,6 @@ func (i commandItem) Title() string       { return i.title }
 func (i commandItem) Description() string { return i.desc }
 func (i commandItem) FilterValue() string { return i.title + " " + i.desc + " " + i.keywords }
 
-
 // FetchCommands reads all commands with language metadata.
 func FetchCommands(dbh *sql.DB) ([]commandItem, error) {
 	rows, err := dbh.Query(`
@@ -68,6 +67,7 @@ func FetchCommands(dbh *sql.DB) ([]commandItem, error) {
 	}
 	return out, nil
 }
+
 // DeleteCommandByID deletes a command row by ID with a short-lived connection.
 func DeleteCommandByID(id int) error {
 	ctx := context.Background()
@@ -80,4 +80,3 @@ func DeleteCommandByID(id int) error {
 	_, err = conn.ExecContext(ctx, "DELETE FROM command WHERE id = ?", id)
 	return err
 }
-

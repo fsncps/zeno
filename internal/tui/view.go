@@ -205,39 +205,39 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// 2) delete-confirm character handling (y/Y, n/N)
 		if m.confirmDelete {
-		    s := msg.String()
-		    switch s {
-		    case "y", "Y", "z", "Z": // keep z/Z if you want to be safe for QWERTZ
-			if m.pendingDeleteID != 0 {
-			    id := m.pendingDeleteID
+			s := msg.String()
+			switch s {
+			case "y", "Y", "z", "Z": // keep z/Z if you want to be safe for QWERTZ
+				if m.pendingDeleteID != 0 {
+					id := m.pendingDeleteID
 
-			    if err := DeleteCommandByID(id); err != nil {
+					if err := DeleteCommandByID(id); err != nil {
+						m2 := m
+						m2.confirmDelete = false
+						m2.pendingDeleteID = 0
+						m2.confirmMsg = "Delete failed: " + err.Error()
+						return m2, nil
+					}
+
+					m2 := m
+					m2.removeItemByID(id)
+					m2.confirmDelete = false
+					m2.pendingDeleteID = 0
+					m2.confirmMsg = ""
+					return m2, nil
+				}
+
+			case "n", "N":
 				m2 := m
 				m2.confirmDelete = false
 				m2.pendingDeleteID = 0
-				m2.confirmMsg = "Delete failed: " + err.Error()
+				m2.confirmMsg = ""
 				return m2, nil
-			    }
-
-			    m2 := m
-			    m2.removeItemByID(id)
-			    m2.confirmDelete = false
-			    m2.pendingDeleteID = 0
-			    m2.confirmMsg = ""
-			    return m2, nil
 			}
 
-		    case "n", "N":
-			m2 := m
-			m2.confirmDelete = false
-			m2.pendingDeleteID = 0
-			m2.confirmMsg = ""
-			return m2, nil
-		    }
-
-		    // any other key while confirming:
-		    // - do NOT feed to filter (see below, gated by !m.confirmDelete)
-		    // - DO fall through to list.Update so arrows etc. still work
+			// any other key while confirming:
+			// - do NOT feed to filter (see below, gated by !m.confirmDelete)
+			// - DO fall through to list.Update so arrows etc. still work
 		} else {
 
 			// 3) type-to-search: ONLY when not in confirm mode and printable input
@@ -265,8 +265,6 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, cmd
 }
-
-
 
 func (m searchModel) View() string {
 	if m.width <= 0 || m.height <= 0 {
@@ -345,7 +343,7 @@ func (m searchModel) View() string {
 
 	info := fmt.Sprintf(
 		"Language:      %s\nFormatters:    %s\nKeywords:      %s\nHit count:     %d\nLast used:     %s",
-		langDisp, formatters, metaKeywords, sel.count, sel.lastUsed, 	)
+		langDisp, formatters, metaKeywords, sel.count, sel.lastUsed)
 
 	if m.confirmDelete && m.confirmMsg != "" {
 		info += "\n" + m.confirmMsg
@@ -476,4 +474,3 @@ func highlightCode(code, lang string) string {
 	}
 	return buf.String()
 }
-

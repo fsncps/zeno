@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -22,7 +22,6 @@ type Language struct {
 	Desc  string
 	Count int
 }
-
 
 func fetchLanguages(ctx context.Context, conn *sql.DB) ([]Language, error) {
 	const q = `
@@ -47,7 +46,6 @@ GROUP BY l.id, l.lang_name, l.lang_desc
 	}
 	return langs, rows.Err()
 }
-
 
 func RunAdd() error {
 	ctx := context.Background()
@@ -93,8 +91,12 @@ func RunAdd() error {
 
 	// 3) Language (from DB, ordered by substring relevance incl. desc)
 	dbLangs, err := fetchLanguages(ctx, conn)
-	if err != nil { return err }
-	if len(dbLangs) == 0 { return fmt.Errorf("no languages found in DB") }
+	if err != nil {
+		return err
+	}
+	if len(dbLangs) == 0 {
+		return fmt.Errorf("no languages found in DB")
+	}
 
 	ordered := orderLangsByTitleSubstring(dbLangs, title)
 
@@ -108,9 +110,6 @@ func RunAdd() error {
 		)
 		opts = append(opts, huh.NewOption(label, l.Name))
 	}
-
-
-
 
 	if err := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
@@ -132,7 +131,6 @@ func RunAdd() error {
 	if langID == 0 {
 		return fmt.Errorf("selected language not found: %q", selectedLang)
 	}
-
 
 	// 4) AI summary
 	desc, kws, aiErr := ai.SummarizeAndKeywords(title, code)

@@ -9,7 +9,6 @@ import (
 	"github.com/fsncps/zeno/internal/db"
 )
 
-
 // Fetch rows from DB with language join.
 func fetchCommands(conn *sql.DB) ([]commandItem, error) {
 	rows, err := conn.Query(`
@@ -61,8 +60,6 @@ func fetchCommands(conn *sql.DB) ([]commandItem, error) {
 	return out, nil
 }
 
-
-
 // Entry point: connect, load, render.
 func RunSearch() error {
 	conn, err := db.Connect(context.Background())
@@ -83,4 +80,3 @@ func RunSearch() error {
 	p := tea.NewProgram(newSearchModel(cmds, 0, 0))
 	return p.Start()
 }
-
