@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/fsncps/zeno/internal/config"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func Connect(ctx context.Context) (*sql.DB, error) {
@@ -39,4 +39,3 @@ func Connect(ctx context.Context) (*sql.DB, error) {
 	}
 	return db, nil
 }
-
