@@ -17,7 +17,7 @@ Usage:
 Environment:
   ZENO_NO_AI=1    Disable AI helpers when adding commands
 ```
-- `zeno [search]` opens a TUI screen: left side has a list of commands with a smart, fuzzy filter active to type, right side shows the command highlighting and formatting plus meta-info. Selecting a command with Enter copies it to clipboard and returns to the shell.
+- `zeno [search]` opens a TUI screen: left side has a list of commands with a smart, fuzzy filter active to type, right side shows the command with highlighting and formatting plus meta-info. Selecting a command with Enter copies it to clipboard and returns to the shell.
 - `zeno add` loads a small input form, where you enter a short title for your command plus the command itself (command is taken from clipboard if already copied) and the language. The languages have smart sorting and the right one should be on top. OpenAI completion endpoints will then phrase a short description of the command add some keywords, and the record is saved to MySQL/MariaDB.
 
 ## Deps & Installation
