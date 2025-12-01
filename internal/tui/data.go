@@ -82,20 +82,121 @@ func DeleteCommandByID(id int) error {
 }
 
 func UpdateCommand(id int, title, desc, kw, code string) error {
-    ctx := context.Background()
-    conn, err := db.Connect(ctx)
-    if err != nil {
-        return err
-    }
-    defer conn.Close()
+	ctx := context.Background()
+	conn, err := db.Connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 
-    _, err = conn.ExecContext(ctx, `
+	_, err = conn.ExecContext(ctx, `
         UPDATE command
         SET title=?, description=?, keywords=?, code=?, updated_on=NOW()
         WHERE id=?`,
-        title, desc, kw, code, id,
-    )
-    return err
+		title, desc, kw, code, id,
+	)
+	return err
 }
 
+// RecordSearchUsage increments counters in search_term and search_hit
+// for the given query term and command ID.
+// No-op if term is empty.
+// RecordSearchUsage increments counters in search_term, search_hit, and command
+// for the given query term and command ID.
+// No-op if term is empty.
+// RecordSearchUsage increments command.count for the given command ID,
+// and, if term is non-empty, also updates search_term and search_hit.
+func RecordSearchUsage(term string, commandID int) error {
+	term = strings.TrimSpace(term)
+
+	ctx := context.Background()
+	conn, err := db.Connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// safe even after Commit()
+		_ = tx.Rollback()
+	}()
+
+	// 1) Always increment the command's count (primary signal).
+	_, err = tx.ExecContext(ctx, `
+        UPDATE command
+           SET count      = count + 1,
+               updated_on = NOW()
+         WHERE id = ?`,
+		commandID,
+	)
+	if err != nil {
+		return err
+	}
+
+	// 2) If no search term, we are done.
+	term = strings.TrimSpace(term)
+	if term == "" {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// 3) Upsert into search_term using unique key on term.
+	res, err := tx.ExecContext(ctx, `
+        INSERT INTO search_term (term, count)
+        VALUES (?, 1)
+        ON DUPLICATE KEY UPDATE
+            count      = count + 1,
+            updated_on = NOW(),
+            id         = LAST_INSERT_ID(id)`,
+		term,
+	)
+	if err != nil {
+		return err
+	}
+
+	termID64, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	termID := int(termID64)
+
+	// 4) Update or insert search_hit for (term_id, command_id).
+	updRes, err := tx.ExecContext(ctx, `
+        UPDATE search_hit
+           SET count      = count + 1,
+               updated_on = NOW()
+         WHERE term_id = ? AND command_id = ?`,
+		termID, commandID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := updRes.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		_, err = tx.ExecContext(ctx, `
+            INSERT INTO search_hit (term_id, command_id, count)
+            VALUES (?, ?, 1)`,
+			termID, commandID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
 
