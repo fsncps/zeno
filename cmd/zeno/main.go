@@ -40,7 +40,8 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`zeno - command snippet search & add TUI
+	fmt.Println(`Zeno is a command and snippet cheat sheet manager. Write your
+	pet peeve commands to a DB with sexy lipgloss on them and retrieve when needed.
 
 Usage:
   zeno            Start search UI
