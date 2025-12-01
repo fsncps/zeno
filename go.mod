@@ -1,6 +1,6 @@
 module github.com/fsncps/zeno
 
-go 1.24.4
+go 1.24
 
 require (
 	github.com/alecthomas/chroma/v2 v2.19.0

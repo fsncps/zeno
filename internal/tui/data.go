@@ -80,3 +80,22 @@ func DeleteCommandByID(id int) error {
 	_, err = conn.ExecContext(ctx, "DELETE FROM command WHERE id = ?", id)
 	return err
 }
+
+func UpdateCommand(id int, title, desc, kw, code string) error {
+    ctx := context.Background()
+    conn, err := db.Connect(ctx)
+    if err != nil {
+        return err
+    }
+    defer conn.Close()
+
+    _, err = conn.ExecContext(ctx, `
+        UPDATE command
+        SET title=?, description=?, keywords=?, code=?, updated_on=NOW()
+        WHERE id=?`,
+        title, desc, kw, code, id,
+    )
+    return err
+}
+
+

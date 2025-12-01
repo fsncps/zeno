@@ -37,6 +37,15 @@ type searchModel struct {
 	confirmMsg      string
 }
 
+type modifyMsg struct {
+    Item commandItem
+}
+
+func openModifyScreen(ci commandItem) tea.Cmd {
+    return func() tea.Msg { return modifyMsg{Item: ci} }
+}
+
+
 func newSearchModel(cmds []commandItem, width, height int) searchModel {
 	items := make([]list.Item, len(cmds))
 	for i, c := range cmds {
@@ -53,6 +62,16 @@ func newSearchModel(cmds []commandItem, width, height int) searchModel {
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
+	// If we already know the window size (e.g. returning from edit),
+	// size the list immediately so it renders correctly.
+	if width > 0 && height > 0 {
+		leftWidth := int(0.4 * float32(width))
+		if leftWidth < 20 {
+			leftWidth = width / 2
+		}
+		l.SetSize(leftWidth-2, height-2)
+	}
+
 	initial := ""
 	if len(cmds) > 0 {
 		initial = cmds[0].code
@@ -66,6 +85,7 @@ func newSearchModel(cmds []commandItem, width, height int) searchModel {
 		height:   height,
 	}
 }
+
 
 // strict substring filter: all query tokens must appear in FilterValue() + code
 func (m *searchModel) applyFilter() {
@@ -123,148 +143,138 @@ func (m *searchModel) removeItemByID(id int) {
 func (m searchModel) Init() tea.Cmd { return nil }
 
 func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
 
-	// ------------------------------------------------------------
-	// WINDOW SIZE
-	// ------------------------------------------------------------
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		leftWidth := int(0.4 * float32(msg.Width))
-		if leftWidth < 20 {
-			leftWidth = msg.Width / 2
-		}
-		m.list.SetSize(leftWidth-2, msg.Height-2)
-		return m, nil
+    // ------------------------------------------------------------
+    // SWITCH ON MESSAGE TYPE
+    // ------------------------------------------------------------
+    switch msg := msg.(type) {
 
-	// ------------------------------------------------------------
-	// KEY HANDLING
-	// ------------------------------------------------------------
-	case tea.KeyMsg:
-		// 1) control / special keys by Type
-		switch msg.Type {
+    case tea.WindowSizeMsg:
+        m.width = msg.Width
+        m.height = msg.Height
+        leftWidth := int(0.4 * float32(msg.Width))
+        if leftWidth < 20 {
+            leftWidth = msg.Width / 2
+        }
+        m.list.SetSize(leftWidth-2, msg.Height-2)
+        return m, nil
 
-		case tea.KeyCtrlC:
-			return m, tea.Quit
+    // ------------------------------------------------------------
+    case tea.KeyMsg:
+        // 1) CTRL / ESC / MODIFY / DELETE
+        switch msg.Type {
 
-		case tea.KeyEsc:
-			// cancel delete confirmation first, if active
-			if m.confirmDelete {
-				m2 := m
-				m2.confirmDelete = false
-				m2.pendingDeleteID = 0
-				m2.confirmMsg = ""
-				return m2, nil
-			}
-			// then clear query if non-empty
-			if m.query != "" {
-				m2 := m
-				m2.query = ""
-				m2.applyFilter()
-				return m2, nil
-			}
-			// otherwise quit
-			return m, tea.Quit
+        case tea.KeyCtrlC:
+            return m, tea.Quit
 
-		case tea.KeyCtrlD:
-			// start delete confirmation on current selection
-			if !m.confirmDelete {
-				if sel, ok := m.list.SelectedItem().(commandItem); ok {
-					m2 := m
-					m2.confirmDelete = true
-					m2.pendingDeleteID = sel.id
-					m2.confirmMsg = fmt.Sprintf(
-						"Delete command %q (id=%d)? Press Y to confirm, N or ESC to cancel.",
-						sel.title, sel.id,
-					)
-					return m2, nil
-				}
-			}
+        case tea.KeyEsc:
+            // cancel delete confirmation
+            if m.confirmDelete {
+                m2 := m
+                m2.confirmDelete = false
+                m2.pendingDeleteID = 0
+                m2.confirmMsg = ""
+                return m2, nil
+            }
+            // clear query
+            if m.query != "" {
+                m2 := m
+                m2.query = ""
+                m2.applyFilter()
+                return m2, nil
+            }
+            return m, tea.Quit
 
-		case tea.KeyBackspace:
-			// don't modify filter while confirm dialog is up
-			if !m.confirmDelete && m.query != "" {
-				m2 := m
-				_, n := utf8.DecodeLastRuneInString(m2.query)
-				if n > 0 && n <= len(m2.query) {
-					m2.query = m2.query[:len(m2.query)-n]
-				}
-				m2.applyFilter()
-				return m2, nil
-			}
+        case tea.KeyCtrlD:
+            if !m.confirmDelete {
+                if sel, ok := m.list.SelectedItem().(commandItem); ok {
+                    m2 := m
+                    m2.confirmDelete = true
+                    m2.pendingDeleteID = sel.id
+                    m2.confirmMsg = fmt.Sprintf("Delete %q (id=%d)? Y/N", sel.title, sel.id)
+                    return m2, nil
+                }
+            }
 
-		case tea.KeyEnter:
-			// only copy when not in delete confirmation mode
-			if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
-				_ = clipboard.WriteAll(sel.code)
-				fmt.Println("Copied to clipboard")
-				return m, tea.Quit
-			}
-		}
+        case tea.KeyCtrlE: // your new binding
+            if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
+                return m, openModifyScreen(sel)
+            }
 
-		// 2) delete-confirm character handling (y/Y, n/N)
-		if m.confirmDelete {
-			s := msg.String()
-			switch s {
-			case "y", "Y", "z", "Z": // keep z/Z if you want to be safe for QWERTZ
-				if m.pendingDeleteID != 0 {
-					id := m.pendingDeleteID
+        case tea.KeyBackspace:
+            if !m.confirmDelete && m.query != "" {
+                m2 := m
+                _, n := utf8.DecodeLastRuneInString(m2.query)
+                m2.query = m2.query[:len(m2.query)-n]
+                m2.applyFilter()
+                return m2, nil
+            }
 
-					if err := DeleteCommandByID(id); err != nil {
-						m2 := m
-						m2.confirmDelete = false
-						m2.pendingDeleteID = 0
-						m2.confirmMsg = "Delete failed: " + err.Error()
-						return m2, nil
-					}
+        case tea.KeyEnter:
+            if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
+                _ = clipboard.WriteAll(sel.code)
+                fmt.Println("Copied")
+                return m, tea.Quit
+            }
+        }
 
-					m2 := m
-					m2.removeItemByID(id)
-					m2.confirmDelete = false
-					m2.pendingDeleteID = 0
-					m2.confirmMsg = ""
-					return m2, nil
-				}
+        // 2) delete confirmation (y/n)
+        if m.confirmDelete {
+            s := msg.String()
+            switch s {
+            case "y", "Y", "z", "Z":
+                id := m.pendingDeleteID
+                if err := DeleteCommandByID(id); err != nil {
+                    m2 := m
+                    m2.confirmMsg = "Delete failed: " + err.Error()
+                    return m2, nil
+                }
+                m2 := m
+                m2.removeItemByID(id)
+                m2.confirmDelete = false
+                m2.pendingDeleteID = 0
+                m2.confirmMsg = ""
+                return m2, nil
 
-			case "n", "N":
-				m2 := m
-				m2.confirmDelete = false
-				m2.pendingDeleteID = 0
-				m2.confirmMsg = ""
-				return m2, nil
-			}
+            case "n", "N":
+                m2 := m
+                m2.confirmDelete = false
+                m2.pendingDeleteID = 0
+                m2.confirmMsg = ""
+                return m2, nil
+            }
 
-			// any other key while confirming:
-			// - do NOT feed to filter (see below, gated by !m.confirmDelete)
-			// - DO fall through to list.Update so arrows etc. still work
-		} else {
+            // Still allow arrow keys to move the list
+        }
 
-			// 3) type-to-search: ONLY when not in confirm mode and printable input
-			if len(msg.Runes) == 1 &&
-				unicode.IsPrint(msg.Runes[0]) &&
-				msg.Runes[0] != '\n' &&
-				msg.Runes[0] != '\t' {
+        // 3) Normal text input
+        if len(msg.Runes) == 1 && unicode.IsPrint(msg.Runes[0]) {
+            m2 := m
+            m2.query += string(msg.Runes[0])
+            m2.applyFilter()
+            return m2, nil
+        }
+    // END case tea.KeyMsg
 
-				m2 := m
-				m2.query += string(msg.Runes[0])
-				m2.applyFilter()
-				return m2, nil
-			}
-		}
-	}
+    // ------------------------------------------------------------
+    // MODIFY MESSAGE (screen switch)
+    // ------------------------------------------------------------
+    case modifyMsg:
+        return newModifyModel(msg.Item, m.width, m.height), nil
+    }
 
-	// ------------------------------------------------------------
-	// DEFAULT FALLTHROUGH → let list handle leftover messages
-	// ------------------------------------------------------------
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+    // ------------------------------------------------------------
+    // FALLBACK TO LIST MODEL (handles arrow keys!)
+    // ------------------------------------------------------------
+    var cmd tea.Cmd
+    m.list, cmd = m.list.Update(msg)
 
-	if sel, ok := m.list.SelectedItem().(commandItem); ok {
-		m.details = sel.code
-	}
-	return m, cmd
+    if sel, ok := m.list.SelectedItem().(commandItem); ok {
+        m.details = sel.code
+    }
+    return m, cmd
 }
+
 
 func (m searchModel) View() string {
 	if m.width <= 0 || m.height <= 0 {
@@ -348,7 +358,7 @@ func (m searchModel) View() string {
 	if m.confirmDelete && m.confirmMsg != "" {
 		info += "\n" + m.confirmMsg
 	} else {
-		info += "\n\nKEYS:          <↑/↓> to select  •  <CR> to copy & return  •  <ESC> to clear/quit  •  <Ctrl+D> to delete\n\nFilter is active!\n"
+		info += "\n\nKEYS:          <↑/↓> to select  •  <CR> to copy & return  •  <ESC> to clear/quit  •  <Ctrl+E> to edit  •  <Ctrl+D> to delete\n\nFilter is active!\n"
 	}
 	info += fmt.Sprintf(
 		"Query: %q",
