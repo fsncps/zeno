@@ -61,22 +61,29 @@ func fetchCommands(conn *sql.DB) ([]commandItem, error) {
 }
 
 // Entry point: connect, load, render.
+// Entry point: connect, load, render.
 func RunSearch() error {
-	conn, err := db.Connect(context.Background())
-	if err != nil {
-		return fmt.Errorf("db connect: %w", err)
-	}
-	defer conn.Close()
+    conn, err := db.Connect(context.Background())
+    if err != nil {
+        return fmt.Errorf("db connect: %w", err)
+    }
+    defer conn.Close()
 
-	cmds, err := fetchCommands(conn)
-	if err != nil {
-		return err
-	}
-	if len(cmds) == 0 {
-		fmt.Println("No commands in database.")
-		return nil
-	}
+    cmds, err := fetchCommands(conn)
+    if err != nil {
+        return err
+    }
+    if len(cmds) == 0 {
+        fmt.Println("No commands in database.")
+        return nil
+    }
 
-	p := tea.NewProgram(newSearchModel(cmds, 0, 0))
-	return p.Start()
+    // alt screen: restore previous terminal contents after exit
+    p := tea.NewProgram(
+        newSearchModel(cmds, 0, 0),
+        tea.WithAltScreen(),
+    )
+
+    return p.Start()
 }
+

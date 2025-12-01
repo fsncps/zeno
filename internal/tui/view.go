@@ -2,8 +2,11 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -16,6 +19,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/fsncps/zeno/internal/db"
 )
 
 const (
@@ -37,6 +42,14 @@ type searchModel struct {
 	confirmMsg      string
 }
 
+type modifyMsg struct {
+	Item commandItem
+}
+
+func openModifyScreen(ci commandItem) tea.Cmd {
+	return func() tea.Msg { return modifyMsg{Item: ci} }
+}
+
 func newSearchModel(cmds []commandItem, width, height int) searchModel {
 	items := make([]list.Item, len(cmds))
 	for i, c := range cmds {
@@ -53,6 +66,16 @@ func newSearchModel(cmds []commandItem, width, height int) searchModel {
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
+	// If we already know the window size (e.g. returning from edit),
+	// size the list immediately so it renders correctly.
+	if width > 0 && height > 0 {
+		leftWidth := int(0.4 * float32(width))
+		if leftWidth < 20 {
+			leftWidth = width / 2
+		}
+		l.SetSize(leftWidth-2, height-2)
+	}
+
 	initial := ""
 	if len(cmds) > 0 {
 		initial = cmds[0].code
@@ -67,6 +90,11 @@ func newSearchModel(cmds []commandItem, width, height int) searchModel {
 	}
 }
 
+type hitStat struct {
+	Count     int
+	UpdatedOn time.Time
+}
+
 // strict substring filter: all query tokens must appear in FilterValue() + code
 func (m *searchModel) applyFilter() {
 	q := strings.TrimSpace(m.query)
@@ -79,6 +107,13 @@ func (m *searchModel) applyFilter() {
 	if len(tokens) == 0 {
 		m.list.SetItems(m.allItems)
 		return
+	}
+
+	// Load per-command hit stats for this term (soft-fail on error).
+	hitStats, err := loadSearchHitStats(q)
+	if err != nil {
+		fmt.Println("WARN: failed to load search hit stats:", err)
+		hitStats = nil
 	}
 
 	out := make([]list.Item, 0, len(m.allItems))
@@ -101,6 +136,47 @@ func (m *searchModel) applyFilter() {
 			out = append(out, it)
 		}
 	}
+
+	// Sort matches by:
+	// 1) search_hit.count (DESC)
+	// 2) search_hit.updated_on (DESC)
+	// 3) command.count (DESC)
+	// 4) command.updated_on (DESC as string, assuming standard TIMESTAMP format)
+	if len(out) > 1 {
+		sort.Slice(out, func(i, j int) bool {
+			ci, ok1 := out[i].(commandItem)
+			cj, ok2 := out[j].(commandItem)
+			if !ok1 || !ok2 {
+				return false
+			}
+
+			var hi, hj hitStat
+			if hitStats != nil {
+				if v, ok := hitStats[ci.id]; ok {
+					hi = v
+				}
+				if v, ok := hitStats[cj.id]; ok {
+					hj = v
+				}
+			}
+
+			// 1) search_hit.count
+			if hi.Count != hj.Count {
+				return hi.Count > hj.Count
+			}
+			// 2) search_hit.updated_on
+			if !hi.UpdatedOn.Equal(hj.UpdatedOn) {
+				return hi.UpdatedOn.After(hj.UpdatedOn)
+			}
+			// 3) command.count
+			if ci.count != cj.count {
+				return ci.count > cj.count
+			}
+			// 4) command.updated_on (string compare ok for TIMESTAMP)
+			return ci.lastUsed > cj.lastUsed
+		})
+	}
+
 	m.list.SetItems(out)
 }
 
@@ -123,11 +199,12 @@ func (m *searchModel) removeItemByID(id int) {
 func (m searchModel) Init() tea.Cmd { return nil }
 
 func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
 
 	// ------------------------------------------------------------
-	// WINDOW SIZE
+	// SWITCH ON MESSAGE TYPE
 	// ------------------------------------------------------------
+	switch msg := msg.(type) {
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -139,17 +216,15 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// ------------------------------------------------------------
-	// KEY HANDLING
-	// ------------------------------------------------------------
 	case tea.KeyMsg:
-		// 1) control / special keys by Type
+		// 1) CTRL / ESC / MODIFY / DELETE
 		switch msg.Type {
 
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 
 		case tea.KeyEsc:
-			// cancel delete confirmation first, if active
+			// cancel delete confirmation
 			if m.confirmDelete {
 				m2 := m
 				m2.confirmDelete = false
@@ -157,75 +232,71 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m2.confirmMsg = ""
 				return m2, nil
 			}
-			// then clear query if non-empty
+			// clear query
 			if m.query != "" {
 				m2 := m
 				m2.query = ""
 				m2.applyFilter()
 				return m2, nil
 			}
-			// otherwise quit
 			return m, tea.Quit
 
 		case tea.KeyCtrlD:
-			// start delete confirmation on current selection
 			if !m.confirmDelete {
 				if sel, ok := m.list.SelectedItem().(commandItem); ok {
 					m2 := m
 					m2.confirmDelete = true
 					m2.pendingDeleteID = sel.id
-					m2.confirmMsg = fmt.Sprintf(
-						"Delete command %q (id=%d)? Press Y to confirm, N or ESC to cancel.",
-						sel.title, sel.id,
-					)
+					m2.confirmMsg = fmt.Sprintf("Delete %q (id=%d)? Y/N", sel.title, sel.id)
 					return m2, nil
 				}
 			}
 
+		case tea.KeyCtrlE:
+			if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
+				return m, openModifyScreen(sel)
+			}
+
 		case tea.KeyBackspace:
-			// don't modify filter while confirm dialog is up
 			if !m.confirmDelete && m.query != "" {
 				m2 := m
 				_, n := utf8.DecodeLastRuneInString(m2.query)
-				if n > 0 && n <= len(m2.query) {
-					m2.query = m2.query[:len(m2.query)-n]
-				}
+				m2.query = m2.query[:len(m2.query)-n]
 				m2.applyFilter()
 				return m2, nil
 			}
 
 		case tea.KeyEnter:
-			// only copy when not in delete confirmation mode
 			if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
+				// Always bump command count; only log search_term/search_hit if query is non-empty.
+				if err := RecordSearchUsage(strings.TrimSpace(m.query), sel.id); err != nil {
+					// Soft-fail: do not break UI behavior if logging fails.
+					fmt.Println("WARN: failed to record search usage:", err)
+				}
+
 				_ = clipboard.WriteAll(sel.code)
-				fmt.Println("Copied to clipboard")
+				fmt.Println("Copied")
 				return m, tea.Quit
 			}
 		}
 
-		// 2) delete-confirm character handling (y/Y, n/N)
+		// 2) delete confirmation (y/n)
 		if m.confirmDelete {
 			s := msg.String()
 			switch s {
-			case "y", "Y", "z", "Z": // keep z/Z if you want to be safe for QWERTZ
-				if m.pendingDeleteID != 0 {
-					id := m.pendingDeleteID
-
-					if err := DeleteCommandByID(id); err != nil {
-						m2 := m
-						m2.confirmDelete = false
-						m2.pendingDeleteID = 0
-						m2.confirmMsg = "Delete failed: " + err.Error()
-						return m2, nil
-					}
-
+			case "y", "Y", "z", "Z":
+				id := m.pendingDeleteID
+				if err := DeleteCommandByID(id); err != nil {
 					m2 := m
-					m2.removeItemByID(id)
-					m2.confirmDelete = false
-					m2.pendingDeleteID = 0
-					m2.confirmMsg = ""
+					m2.confirmMsg = "Delete failed: " + err.Error()
 					return m2, nil
 				}
+				m2 := m
+				m2.removeItemByID(id)
+				m2.confirmDelete = false
+				m2.pendingDeleteID = 0
+				m2.confirmMsg = ""
+				return m2, nil
 
 			case "n", "N":
 				m2 := m
@@ -235,27 +306,27 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m2, nil
 			}
 
-			// any other key while confirming:
-			// - do NOT feed to filter (see below, gated by !m.confirmDelete)
-			// - DO fall through to list.Update so arrows etc. still work
-		} else {
-
-			// 3) type-to-search: ONLY when not in confirm mode and printable input
-			if len(msg.Runes) == 1 &&
-				unicode.IsPrint(msg.Runes[0]) &&
-				msg.Runes[0] != '\n' &&
-				msg.Runes[0] != '\t' {
-
-				m2 := m
-				m2.query += string(msg.Runes[0])
-				m2.applyFilter()
-				return m2, nil
-			}
+			// Still allow arrow keys to move the list
 		}
+
+		// 3) Normal text input
+		if len(msg.Runes) == 1 && unicode.IsPrint(msg.Runes[0]) {
+			m2 := m
+			m2.query += string(msg.Runes[0])
+			m2.applyFilter()
+			return m2, nil
+		}
+	// END case tea.KeyMsg
+
+	// ------------------------------------------------------------
+	// MODIFY MESSAGE (screen switch)
+	// ------------------------------------------------------------
+	case modifyMsg:
+		return newModifyModel(msg.Item, m.width, m.height), nil
 	}
 
 	// ------------------------------------------------------------
-	// DEFAULT FALLTHROUGH → let list handle leftover messages
+	// FALLBACK TO LIST MODEL (handles arrow keys!)
 	// ------------------------------------------------------------
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
@@ -282,16 +353,15 @@ func (m searchModel) View() string {
 		Padding(0, 1).
 		Width(rightWidth)
 
-	// titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	matchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 
-	wrapBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(rightPadLeft)
+	wrapBox := lipgloss.NewStyle().Width(rightWidth-2).PaddingLeft(rightPadLeft)
 
 	codePadLeft := rightPadLeft / 2
 	if codePadLeft < 1 {
 		codePadLeft = 1
 	}
-	codeBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(codePadLeft)
+	codeBox := lipgloss.NewStyle().Width(rightWidth-2).PaddingLeft(codePadLeft)
 
 	// Selected item (safe if list empty)
 	var sel commandItem
@@ -348,7 +418,7 @@ func (m searchModel) View() string {
 	if m.confirmDelete && m.confirmMsg != "" {
 		info += "\n" + m.confirmMsg
 	} else {
-		info += "\n\nKEYS:          <↑/↓> to select  •  <CR> to copy & return  •  <ESC> to clear/quit  •  <Ctrl+D> to delete\n\nFilter is active!\n"
+		info += "\n\nKEYS:          <↑/↓> select  •  <CR> return  •  <ESC> clear/quit  •  <Ctrl+E> edit  •  <Ctrl+D> delete\n\nFilter is active!\n"
 	}
 	info += fmt.Sprintf(
 		"Query: %q",
@@ -413,6 +483,51 @@ func highlightTokens(s string, tokens []string, style lipgloss.Style) string {
 	return out
 }
 
+// ---------------- DB helper for ranking ----------------
+
+func loadSearchHitStats(term string) (map[int]hitStat, error) {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return map[int]hitStat{}, nil
+	}
+
+	ctx := context.Background()
+	conn, err := db.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	rows, err := conn.QueryContext(ctx, `
+        SELECT sh.command_id, sh.count, sh.updated_on
+          FROM search_term st
+          JOIN search_hit sh ON sh.term_id = st.id
+         WHERE st.term = ?`,
+		term,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stats := make(map[int]hitStat)
+	for rows.Next() {
+		var (
+			cmdID int
+			cnt   int
+			t     time.Time
+		)
+		if err := rows.Scan(&cmdID, &cnt, &t); err != nil {
+			return nil, err
+		}
+		stats[cmdID] = hitStat{Count: cnt, UpdatedOn: t}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
+
 // ---------------- highlighting ----------------
 
 func normalizeLangAlias(lang string) string {
@@ -474,3 +589,4 @@ func highlightCode(code, lang string) string {
 	}
 	return buf.String()
 }
+
