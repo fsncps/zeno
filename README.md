@@ -25,7 +25,9 @@ The filter and sorting mechanism is adaptive and will present hits ordered by (s
 ## Deps & Installation
 
 You need Go and MariaDB and have to have the DB set up. Create a DB and user, set the env vars `$ZENODB_NAME`, `$ZENODB_USER`, `$ZENODB_PASS`, and for remote connections also `$ZENODB_HOST`, and then clone the repo and import the schema.
+
 To install, just run `make` and `make install` form the repo root.
+
 For the AI description support, you need an OpenAI API key under `$OPENAI_API_KEY`.
 
 ---
