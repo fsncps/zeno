@@ -20,7 +20,7 @@ Environment:
 - `zeno [search]` opens a TUI screen: the left side has a list of commands with a smart fuzzy filter, while the reading pane on the right shows the command with syntax highlighting and formatting, its title and description as well as meta-info. Selecting a command with Enter copies it to clipboard and returns to the shell.
 - `zeno add` loads a small input form, where you enter a short title for your command plus the command itself (automatically grabbed from X clipboard if already copied) and the language. The languages have smart sorting and the right one should be at the top. OpenAI completion endpoints will then phrase a short description of the command and add some keywords, and the record is saved to MySQL/MariaDB.
 
-The filter and sorting mechanism is adaptive and will present hits ordered by (sort of) smart metrics. To be added is vector space embedding of the codeblock records for similarity searching.
+The filter and sorting mechanism is adaptive and will present hits ordered by (sort of) smart metrics. Yet to be added is vector space embedding of the codeblock records for similarity searching.
 
 ## Deps & Installation
 
