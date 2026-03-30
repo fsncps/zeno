@@ -2,27 +2,27 @@ package tui
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/fsncps/zeno/internal/db"
 )
 
 type modifyModel struct {
 	width  int
 	height int
 
-	id          int
-	title       *textarea.Model
-	desc        *textarea.Model
-	keywords    *textarea.Model
-	code        *textarea.Model
+	id       int
+	title    *textarea.Model
+	desc     *textarea.Model
+	keywords *textarea.Model
+	code     *textarea.Model
 
 	field  int
-	status string // optional status line (errors)
+	status string
+	conn   *sql.DB
 }
 
 const (
@@ -60,7 +60,7 @@ func newTA(h int) *textarea.Model {
 	return &ta
 }
 
-func newModifyModel(ci commandItem, w, h int) modifyModel {
+func newModifyModel(ci commandItem, conn *sql.DB, w, h int) modifyModel {
 	t := newTA(1)
 	t.SetValue(ci.title)
 
@@ -82,6 +82,7 @@ func newModifyModel(ci commandItem, w, h int) modifyModel {
 		keywords: k,
 		code:     c,
 		field:    fieldTitle,
+		conn:     conn,
 	}
 	// apply geometry immediately if we already know width/height
 	if m.width > 0 && m.height > 0 {
@@ -140,10 +141,10 @@ func (m modifyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return model, cmd
 
 		case tea.KeyTab:
-			return m.focus((m.field+1)%4), nil
+			return m.focus((m.field + 1) % 4), nil
 
 		case tea.KeyShiftTab:
-			return m.focus((m.field+3)%4), nil
+			return m.focus((m.field + 3) % 4), nil
 		}
 	}
 
@@ -186,8 +187,6 @@ func (m *modifyModel) applyGeometry() {
 	m.keywords.SetWidth(innerW)
 	m.code.SetWidth(innerW)
 
-	// height budgeting (textarea heights):
-	// title: 1, desc: 3, kw: 3, code: remainder (min 3)
 	// height budgeting (textarea heights):
 	// title: 1, desc: 3, kw: 3, code: remainder (min 3)
 	titleH := 1
@@ -268,13 +267,8 @@ func (m modifyModel) saveSync() error {
 	code := m.code.Value()
 
 	ctx := context.Background()
-	conn, err := db.Connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
 
-	_, err = conn.ExecContext(ctx, `
+	_, err := m.conn.ExecContext(ctx, `
         UPDATE command
         SET title = ?, description = ?, keywords = ?, code_md = ?, updated_on = NOW()
         WHERE id = ?`,
@@ -285,16 +279,7 @@ func (m modifyModel) saveSync() error {
 
 // backToSearch: reload commands and return a fresh searchModel
 func (m modifyModel) backToSearch() (tea.Model, tea.Cmd) {
-	ctx := context.Background()
-	conn, err := db.Connect(ctx)
-	if err != nil {
-		m2 := m
-		m2.status = "DB reconnect failed: " + err.Error()
-		return m2, nil
-	}
-	defer conn.Close()
-
-	cmds, err := fetchCommands(conn)
+	cmds, err := fetchCommands(m.conn)
 	if err != nil || len(cmds) == 0 {
 		m2 := m
 		if err != nil {
@@ -305,6 +290,5 @@ func (m modifyModel) backToSearch() (tea.Model, tea.Cmd) {
 		return m2, nil
 	}
 
-	return newSearchModel(cmds, m.width, m.height), nil
+	return newSearchModel(cmds, m.conn, m.width, m.height), nil
 }
-

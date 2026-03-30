@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -19,8 +20,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/fsncps/zeno/internal/db"
 )
 
 const (
@@ -32,7 +31,7 @@ const (
 
 type searchModel struct {
 	list            list.Model
-	allItems        []list.Item // source items for filtering
+	allItems        []list.Item
 	details         string
 	query           string
 	width           int
@@ -40,6 +39,7 @@ type searchModel struct {
 	confirmDelete   bool
 	pendingDeleteID int
 	confirmMsg      string
+	conn            *sql.DB
 }
 
 type modifyMsg struct {
@@ -50,7 +50,7 @@ func openModifyScreen(ci commandItem) tea.Cmd {
 	return func() tea.Msg { return modifyMsg{Item: ci} }
 }
 
-func newSearchModel(cmds []commandItem, width, height int) searchModel {
+func newSearchModel(cmds []commandItem, conn *sql.DB, width, height int) searchModel {
 	items := make([]list.Item, len(cmds))
 	for i, c := range cmds {
 		items[i] = c
@@ -87,6 +87,7 @@ func newSearchModel(cmds []commandItem, width, height int) searchModel {
 		details:  initial,
 		width:    width,
 		height:   height,
+		conn:     conn,
 	}
 }
 
@@ -110,7 +111,7 @@ func (m *searchModel) applyFilter() {
 	}
 
 	// Load per-command hit stats for this term (soft-fail on error).
-	hitStats, err := loadSearchHitStats(q)
+	hitStats, err := loadSearchHitStats(q, m.conn)
 	if err != nil {
 		fmt.Println("WARN: failed to load search hit stats:", err)
 		hitStats = nil
@@ -269,7 +270,7 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			if sel, ok := m.list.SelectedItem().(commandItem); ok && !m.confirmDelete {
 				// Always bump command count; only log search_term/search_hit if query is non-empty.
-				if err := RecordSearchUsage(strings.TrimSpace(m.query), sel.id); err != nil {
+				if err := RecordSearchUsage(strings.TrimSpace(m.query), sel.id, m.conn); err != nil {
 					// Soft-fail: do not break UI behavior if logging fails.
 					fmt.Println("WARN: failed to record search usage:", err)
 				}
@@ -286,7 +287,7 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch s {
 			case "y", "Y", "z", "Z":
 				id := m.pendingDeleteID
-				if err := DeleteCommandByID(id); err != nil {
+				if err := DeleteCommandByID(m.conn, id); err != nil {
 					m2 := m
 					m2.confirmMsg = "Delete failed: " + err.Error()
 					return m2, nil
@@ -322,7 +323,7 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// MODIFY MESSAGE (screen switch)
 	// ------------------------------------------------------------
 	case modifyMsg:
-		return newModifyModel(msg.Item, m.width, m.height), nil
+		return newModifyModel(msg.Item, m.conn, m.width, m.height), nil
 	}
 
 	// ------------------------------------------------------------
@@ -355,13 +356,13 @@ func (m searchModel) View() string {
 
 	matchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 
-	wrapBox := lipgloss.NewStyle().Width(rightWidth-2).PaddingLeft(rightPadLeft)
+	wrapBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(rightPadLeft)
 
 	codePadLeft := rightPadLeft / 2
 	if codePadLeft < 1 {
 		codePadLeft = 1
 	}
-	codeBox := lipgloss.NewStyle().Width(rightWidth-2).PaddingLeft(codePadLeft)
+	codeBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(codePadLeft)
 
 	// Selected item (safe if list empty)
 	var sel commandItem
@@ -485,18 +486,13 @@ func highlightTokens(s string, tokens []string, style lipgloss.Style) string {
 
 // ---------------- DB helper for ranking ----------------
 
-func loadSearchHitStats(term string) (map[int]hitStat, error) {
+func loadSearchHitStats(term string, conn *sql.DB) (map[int]hitStat, error) {
 	term = strings.TrimSpace(term)
 	if term == "" {
 		return map[int]hitStat{}, nil
 	}
 
 	ctx := context.Background()
-	conn, err := db.Connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
 
 	rows, err := conn.QueryContext(ctx, `
         SELECT sh.command_id, sh.count, sh.updated_on
@@ -589,4 +585,3 @@ func highlightCode(code, lang string) string {
 	}
 	return buf.String()
 }
-

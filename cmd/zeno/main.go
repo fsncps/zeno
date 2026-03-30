@@ -10,9 +10,9 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
-        fmt.Println(version.Version)
-        return
-    }
+		fmt.Println(version.Version)
+		return
+	}
 	args := os.Args[1:]
 
 	if len(args) == 0 {
@@ -45,7 +45,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`Zeno is a command and snippet cheat sheet manager. Write your
+	fmt.Print(`Zeno is a command and snippet cheat sheet manager. Write your
 	pet peeve commands to a DB with sexy lipgloss on them and retrieve when needed.
 
 Usage:
