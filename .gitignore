@@ -12,3 +12,5 @@ dist/
 __pycache__/
 plan/
 AGENTS.md
+build/
+zeno
