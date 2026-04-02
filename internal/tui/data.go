@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 )
 
@@ -20,7 +21,9 @@ type commandItem struct {
 
 func (i commandItem) Title() string       { return i.title }
 func (i commandItem) Description() string { return i.desc }
-func (i commandItem) FilterValue() string { return i.title + " " + i.desc + " " + i.keywords }
+func (i commandItem) FilterValue() string {
+	return i.title + " " + i.desc + " " + keywordsToDisplay(i.keywords)
+}
 
 func DeleteCommandByID(conn *sql.DB, id int) error {
 	_, err := conn.ExecContext(context.Background(), "DELETE FROM command WHERE id = ?", id)
@@ -99,4 +102,33 @@ func RecordSearchUsage(term string, commandID int, conn *sql.DB) error {
 	}
 
 	return tx.Commit()
+}
+
+func keywordsToDisplay(raw string) string {
+	if raw == "" || raw == "[]" {
+		return ""
+	}
+	var kws []string
+	if err := json.Unmarshal([]byte(raw), &kws); err != nil {
+		return raw
+	}
+	return strings.Join(kws, ", ")
+}
+
+func displayToKeywords(display string) string {
+	display = strings.TrimSpace(display)
+	if display == "" {
+		return "[]"
+	}
+	var kws []string
+	for _, s := range strings.Split(display, ",") {
+		if s := strings.TrimSpace(s); s != "" {
+			kws = append(kws, s)
+		}
+	}
+	if len(kws) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(kws)
+	return string(b)
 }

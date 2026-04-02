@@ -68,7 +68,7 @@ func newModifyModel(ci commandItem, conn *sql.DB, w, h int) modifyModel {
 	d.SetValue(ci.desc)
 
 	k := newTA(3)
-	k.SetValue(ci.keywords)
+	k.SetValue(keywordsToDisplay(ci.keywords))
 
 	c := newTA(4) // will be resized by geometry
 	c.SetValue(ci.code)
@@ -263,7 +263,7 @@ func (m modifyModel) saveSync() error {
 	id := m.id
 	title := strings.TrimSpace(m.title.Value())
 	desc := strings.TrimSpace(m.desc.Value())
-	kw := strings.TrimSpace(m.keywords.Value())
+	kw := displayToKeywords(strings.TrimSpace(m.keywords.Value()))
 	code := m.code.Value()
 
 	ctx := context.Background()

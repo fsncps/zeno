@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -133,11 +134,20 @@ func RunAdd() error {
 	}
 
 	// 4) AI summary
-	desc, kws, aiErr := ai.SummarizeAndKeywords(title, code)
-	if aiErr != nil {
-		fmt.Println("AI error, using fallback:", aiErr)
-		desc = "(todo: description)"
+	var desc string
+	var kws []string
+
+	if os.Getenv("ZENO_NO_AI") == "1" {
+		desc = "(no AI description)"
 		kws = []string{}
+	} else {
+		var aiErr error
+		desc, kws, aiErr = ai.SummarizeAndKeywords(title, code)
+		if aiErr != nil {
+			fmt.Println("AI error, using fallback:", aiErr)
+			desc = "(todo: description)"
+			kws = []string{}
+		}
 	}
 	// prepend lang to keywords if missing
 	if selectedLang != "" {
