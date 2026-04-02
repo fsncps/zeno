@@ -344,25 +344,27 @@ func (m searchModel) View() string {
 	}
 
 	leftWidth := int(0.4 * float32(m.width))
-	rightWidth := m.width - leftWidth - 2
-	totalHeight := m.height - 2
+	rightWidth := m.width - leftWidth - 4 // list border(2) + list padding(2)
+	totalHeight := m.height
 
 	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 	footerBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		Padding(0, 1).
-		Width(rightWidth)
+		Width(rightWidth - 4) // footer border(2) + footer padding(2)
+
+	innerWidth := rightWidth - 4 // border(2) + padding(2) for content box
 
 	matchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 
-	wrapBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(rightPadLeft)
+	wrapBox := lipgloss.NewStyle().Width(innerWidth - rightPadLeft).PaddingLeft(rightPadLeft)
 
 	codePadLeft := rightPadLeft / 2
 	if codePadLeft < 1 {
 		codePadLeft = 1
 	}
-	codeBox := lipgloss.NewStyle().Width(rightWidth - 2).PaddingLeft(codePadLeft)
+	codeInner := lipgloss.NewStyle().Width(innerWidth - codePadLeft).PaddingLeft(codePadLeft)
 
 	// Selected item (safe if list empty)
 	var sel commandItem
@@ -379,18 +381,10 @@ func (m searchModel) View() string {
 		tokens = strings.Fields(strings.ToLower(q))
 	}
 
-	hr := strings.Repeat("─", rightWidth-2)
-
 	titleText := highlightTokens(sel.title, tokens, matchStyle)
 	descText := highlightTokens(sel.desc, tokens, matchStyle)
 
-	header := fmt.Sprintf(
-		"%s\n\n%s\n\n%s\n\n%s",
-		hr,
-		wrapBox.Render(titleText),
-		wrapBox.Render(descText),
-		hr,
-	)
+	titleContent := wrapBox.Render(titleText) + "\n\n" + wrapBox.Render(descText)
 
 	// preview code block (truncated for preview)
 	codeLines := strings.Split(sel.code, "\n")
@@ -399,7 +393,7 @@ func (m searchModel) View() string {
 		codeLines = append(codeLines, "... (truncated)")
 	}
 	highlighted := highlightCode(strings.Join(codeLines, "\n"), strings.ToLower(sel.language))
-	codeBlock := codeBox.Render(highlighted)
+	codeBlock := codeInner.Render(highlighted)
 
 	langDisp := strings.ToUpper(sel.language)
 	if langDisp == "" {
@@ -428,23 +422,22 @@ func (m searchModel) View() string {
 
 	footer := footerBox.Render(info)
 
-	headerHeight := lipgloss.Height(header)
-	footerHeight := lipgloss.Height(footer)
-	codeHeight := lipgloss.Height(codeBlock)
-	freeSpace := totalHeight - headerHeight - footerHeight - codeHeight
-	if freeSpace < 0 {
-		freeSpace = 0
+	titleBox := border.Width(innerWidth).Render(titleContent)
+	titleBoxH := lipgloss.Height(titleBox)
+	footerH := lipgloss.Height(footer)
+	frameH := border.GetVerticalFrameSize()
+	codeBoxH := totalHeight - titleBoxH - footerH - frameH
+	if codeBoxH < frameH {
+		codeBoxH = frameH
 	}
-	topPad := freeSpace / 2
 
-	rightView := lipgloss.JoinVertical(
-		lipgloss.Top,
-		header,
-		strings.Repeat("\n", topPad),
-		codeBlock,
-		strings.Repeat("\n", freeSpace-topPad),
-		footer,
-	)
+	codeBoxStr := border.
+		Width(innerWidth).
+		Height(codeBoxH).
+		AlignVertical(lipgloss.Center).
+		Render(codeBlock)
+
+	rightView := lipgloss.JoinVertical(lipgloss.Top, titleBox, codeBoxStr, footer)
 
 	listView := border.Width(leftWidth).Render(m.list.View())
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, rightView)
