@@ -4,20 +4,51 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fsncps/zeno/internal/config"
 	"github.com/fsncps/zeno/internal/tui"
 	"github.com/fsncps/zeno/internal/version"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
+	showConfig := false
+	args := os.Args[1:]
+
+	for i, arg := range args {
+		if arg == "--show-config" {
+			showConfig = true
+			args = append(args[:i], args[i+1:]...)
+			break
+		}
+	}
+
+	if len(args) > 0 && args[0] == "--version" {
 		fmt.Println(version.Version)
 		return
 	}
-	args := os.Args[1:]
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	if showConfig {
+		fmt.Printf("Config file: %s\n", cfg.ConfigFile)
+		fmt.Printf("Env file: %s\n", cfg.EnvFile)
+		fmt.Printf("Database: %s@%s:%s/%s\n", cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName)
+		fmt.Printf("Theme: %s\n", cfg.Theme)
+		if len(cfg.OpenAIKey) > 10 {
+			fmt.Printf("OpenAI: %s***\n", cfg.OpenAIKey[:10])
+		} else if cfg.OpenAIKey != "" {
+			fmt.Printf("OpenAI: ***\n")
+		} else {
+			fmt.Printf("OpenAI: (not set)\n")
+		}
+		return
+	}
 
 	if len(args) == 0 {
-		// default: search UI
-		if err := tui.RunSearch(); err != nil {
+		if err := tui.RunSearch(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
@@ -26,12 +57,12 @@ func main() {
 
 	switch args[0] {
 	case "search":
-		if err := tui.RunSearch(); err != nil {
+		if err := tui.RunSearch(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
 	case "add":
-		if err := tui.RunAdd(); err != nil {
+		if err := tui.RunAdd(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
@@ -46,7 +77,7 @@ func main() {
 
 func printUsage() {
 	fmt.Print(`Zeno is a command and snippet cheat sheet manager. Write your
-	pet peeve commands to a DB with sexy lipgloss on them and retrieve when needed.
+oft-used commands to a DB and retrieve them when needed.
 
 Usage:
   zeno            Start search UI
@@ -56,5 +87,12 @@ Usage:
 
 Environment:
   ZENO_NO_AI=1    Disable AI helpers when adding commands
+
+Config:
+  ~/.config/zeno/config.yaml    General settings
+  ~/.config/zeno/.env           Secrets (DB credentials, API keys)
+
+Flags:
+  --show-config    Print current configuration and exit
 `)
 }

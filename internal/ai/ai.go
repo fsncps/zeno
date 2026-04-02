@@ -3,16 +3,12 @@ package ai
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// SummarizeAndKeywords returns description (<=100 words) and 5–8 keywords.
-// Output is exactly two sections separated by a blank line.
-func SummarizeAndKeywords(title, code string) (string, []string, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+func SummarizeAndKeywords(title, code, apiKey string) (string, []string, error) {
 	if apiKey == "" {
 		return "", nil, fmt.Errorf("OPENAI_API_KEY not set")
 	}

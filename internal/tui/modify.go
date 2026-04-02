@@ -23,6 +23,7 @@ type modifyModel struct {
 	field  int
 	status string
 	conn   *sql.DB
+	theme  string
 }
 
 const (
@@ -60,7 +61,7 @@ func newTA(h int) *textarea.Model {
 	return &ta
 }
 
-func newModifyModel(ci commandItem, conn *sql.DB, w, h int) modifyModel {
+func newModifyModel(ci commandItem, conn *sql.DB, theme string, w, h int) modifyModel {
 	t := newTA(1)
 	t.SetValue(ci.title)
 
@@ -70,7 +71,7 @@ func newModifyModel(ci commandItem, conn *sql.DB, w, h int) modifyModel {
 	k := newTA(3)
 	k.SetValue(keywordsToDisplay(ci.keywords))
 
-	c := newTA(4) // will be resized by geometry
+	c := newTA(4)
 	c.SetValue(ci.code)
 
 	m := modifyModel{
@@ -83,8 +84,8 @@ func newModifyModel(ci commandItem, conn *sql.DB, w, h int) modifyModel {
 		code:     c,
 		field:    fieldTitle,
 		conn:     conn,
+		theme:    theme,
 	}
-	// apply geometry immediately if we already know width/height
 	if m.width > 0 && m.height > 0 {
 		m.applyGeometry()
 	}
@@ -290,5 +291,5 @@ func (m modifyModel) backToSearch() (tea.Model, tea.Cmd) {
 		return m2, nil
 	}
 
-	return newSearchModel(cmds, m.conn, m.width, m.height), nil
+	return newSearchModel(cmds, m.conn, m.theme, m.width, m.height), nil
 }

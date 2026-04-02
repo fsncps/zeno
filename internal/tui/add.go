@@ -14,6 +14,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/huh"
 	"github.com/fsncps/zeno/internal/ai"
+	"github.com/fsncps/zeno/internal/config"
 	"github.com/fsncps/zeno/internal/db"
 )
 
@@ -48,9 +49,9 @@ GROUP BY l.id, l.lang_name, l.lang_desc
 	return langs, rows.Err()
 }
 
-func RunAdd() error {
+func RunAdd(cfg config.Config) error {
 	ctx := context.Background()
-	conn, err := db.Connect(ctx)
+	conn, err := db.Connect(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -58,7 +59,6 @@ func RunAdd() error {
 
 	var title, mode, code string
 
-	// 1) Title + input mode
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Command title").Value(&title),
@@ -75,7 +75,6 @@ func RunAdd() error {
 		return err
 	}
 
-	// 2) Code
 	if mode == "clip" {
 		clip, err := clipboard.ReadAll()
 		if err != nil {
@@ -90,7 +89,6 @@ func RunAdd() error {
 		}
 	}
 
-	// 3) Language (from DB, ordered by substring relevance incl. desc)
 	dbLangs, err := fetchLanguages(ctx, conn)
 	if err != nil {
 		return err
@@ -121,7 +119,6 @@ func RunAdd() error {
 		return err
 	}
 
-	// map to ID
 	var langID int
 	for _, l := range dbLangs {
 		if l.Name == selectedLang {
@@ -133,7 +130,6 @@ func RunAdd() error {
 		return fmt.Errorf("selected language not found: %q", selectedLang)
 	}
 
-	// 4) AI summary
 	var desc string
 	var kws []string
 
@@ -142,14 +138,13 @@ func RunAdd() error {
 		kws = []string{}
 	} else {
 		var aiErr error
-		desc, kws, aiErr = ai.SummarizeAndKeywords(title, code)
+		desc, kws, aiErr = ai.SummarizeAndKeywords(title, code, cfg.OpenAIKey)
 		if aiErr != nil {
 			fmt.Println("AI error, using fallback:", aiErr)
 			desc = "(todo: description)"
 			kws = []string{}
 		}
 	}
-	// prepend lang to keywords if missing
 	if selectedLang != "" {
 		found := false
 		for _, k := range kws {
@@ -166,7 +161,6 @@ func RunAdd() error {
 	kwsJSON, _ := json.Marshal(kws)
 	embedding := "[]"
 
-	// 5) Insert
 	_, err = conn.Exec(`
 		INSERT INTO command (title, description, code_md, keywords, embedding, lang_id)
 		VALUES (?, ?, ?, ?, ?, ?)

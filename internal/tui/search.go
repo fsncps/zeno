@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fsncps/zeno/internal/config"
 	"github.com/fsncps/zeno/internal/db"
 )
 
-// Fetch rows from DB with language join.
 func fetchCommands(conn *sql.DB) ([]commandItem, error) {
 	rows, err := conn.Query(`
 		SELECT
@@ -60,9 +60,8 @@ func fetchCommands(conn *sql.DB) ([]commandItem, error) {
 	return out, nil
 }
 
-// Entry point: connect, load, render.
-func RunSearch() error {
-	conn, err := db.Connect(context.Background())
+func RunSearch(cfg config.Config) error {
+	conn, err := db.Connect(context.Background(), cfg)
 	if err != nil {
 		return fmt.Errorf("db connect: %w", err)
 	}
@@ -77,9 +76,8 @@ func RunSearch() error {
 		return nil
 	}
 
-	// alt screen: restore previous terminal contents after exit
 	p := tea.NewProgram(
-		newSearchModel(cmds, conn, 0, 0),
+		newSearchModel(cmds, conn, cfg.Theme, 0, 0),
 		tea.WithAltScreen(),
 	)
 

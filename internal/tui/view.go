@@ -40,6 +40,7 @@ type searchModel struct {
 	pendingDeleteID int
 	confirmMsg      string
 	conn            *sql.DB
+	theme           string
 }
 
 type modifyMsg struct {
@@ -50,7 +51,7 @@ func openModifyScreen(ci commandItem) tea.Cmd {
 	return func() tea.Msg { return modifyMsg{Item: ci} }
 }
 
-func newSearchModel(cmds []commandItem, conn *sql.DB, width, height int) searchModel {
+func newSearchModel(cmds []commandItem, conn *sql.DB, theme string, width, height int) searchModel {
 	items := make([]list.Item, len(cmds))
 	for i, c := range cmds {
 		items[i] = c
@@ -62,12 +63,10 @@ func newSearchModel(cmds []commandItem, conn *sql.DB, width, height int) searchM
 	l := list.New(items, delegate, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false) // we do our own filtering
+	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
-	// If we already know the window size (e.g. returning from edit),
-	// size the list immediately so it renders correctly.
 	if width > 0 && height > 0 {
 		leftWidth := int(0.4 * float32(width))
 		if leftWidth < 20 {
@@ -88,6 +87,7 @@ func newSearchModel(cmds []commandItem, conn *sql.DB, width, height int) searchM
 		width:    width,
 		height:   height,
 		conn:     conn,
+		theme:    theme,
 	}
 }
 
@@ -323,7 +323,7 @@ func (m searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// MODIFY MESSAGE (screen switch)
 	// ------------------------------------------------------------
 	case modifyMsg:
-		return newModifyModel(msg.Item, m.conn, m.width, m.height), nil
+		return newModifyModel(msg.Item, m.conn, m.theme, m.width, m.height), nil
 	}
 
 	// ------------------------------------------------------------
@@ -393,7 +393,7 @@ func (m searchModel) View() string {
 		codeLines = codeLines[:maxPreviewLines]
 		codeLines = append(codeLines, "... (truncated)")
 	}
-	highlighted := highlightCode(strings.Join(codeLines, "\n"), strings.ToLower(sel.language))
+	highlighted := highlightCode(strings.Join(codeLines, "\n"), strings.ToLower(sel.language), m.theme)
 	codeBlock := codeInner.Render(highlighted)
 
 	langDisp := strings.ToUpper(sel.language)
@@ -563,13 +563,16 @@ func pickLexer(lang, code string) chroma.Lexer {
 	return lexers.Fallback
 }
 
-func highlightCode(code, lang string) string {
+func highlightCode(code, lang, theme string) string {
 	lx := pickLexer(lang, code)
 	it, err := lx.Tokenise(nil, code)
 	if err != nil {
 		return code
 	}
-	style := styles.Get("catppuccin-macchiato")
+	style := styles.Get(theme)
+	if style == nil {
+		style = styles.Get("catppuccin-macchiato")
+	}
 	if style == nil {
 		style = styles.Fallback
 	}
