@@ -60,7 +60,7 @@ func newSearchModel(cmds []commandItem, conn *sql.DB, width, height int) searchM
 	delegate.ShowDescription = true
 
 	l := list.New(items, delegate, 0, 0)
-	l.Title = "Commands"
+	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false) // we do our own filtering
 	l.SetShowHelp(false)
@@ -382,9 +382,10 @@ func (m searchModel) View() string {
 	}
 
 	titleText := highlightTokens(sel.title, tokens, matchStyle)
+	boldTitle := lipgloss.NewStyle().Bold(true).Render(titleText)
 	descText := highlightTokens(sel.desc, tokens, matchStyle)
 
-	titleContent := wrapBox.Render(titleText) + "\n\n" + wrapBox.Render(descText)
+	titleContent := wrapBox.Render(boldTitle) + "\n\n" + wrapBox.Render(descText)
 
 	// preview code block (truncated for preview)
 	codeLines := strings.Split(sel.code, "\n")
