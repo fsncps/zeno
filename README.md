@@ -1,12 +1,26 @@
 # zeno
 
-A tiny but super simple and fast command and code snippet cheat sheet manager to build a custom database with the oft-used commands, because it feels better than asking ChatGPT every time. Designed to be lean and as efficient as possible. Made with Go and the [Charm/huh/lipgloss](https://github.com/charmbracelet/lipgloss) libs.
+A fast, lightweight command and code snippet cheat sheet manager. Build your own searchable database of frequently-used commands instead of asking ChatGPT every time. Built with Go and the [Charm](https://github.com/charmbracelet) TUI stack (Bubble Tea, Lipgloss, Huh).
+
+![Screenshot showing add form (left) and search UI (right)](docs/screenshot_20260402_082439.png)
+
+## Features
+
+- **Interactive Search UI** — Fuzzy filtering across title, description, keywords, and code content with real-time results
+- **Adaptive Ranking** — Search results ordered by usage frequency and recency; frequently-used commands surface to the top
+- **Syntax Highlighting** — Code blocks displayed with [Chroma](https://github.com/alecthomas/chroma) highlighting in catppuccin-macchiato theme
+- **AI-Powered Descriptions** — OpenAI GPT-4o-mini generates descriptions and keywords when adding new commands
+- **Smart Language Detection** — Language picker auto-sorts by usage frequency; common aliases normalized (e.g., `js` → `javascript`)
+- **Quick Add** — Paste from clipboard, add title, pick language — done
+- **Inline Editing** — Press `Ctrl+E` to edit any command directly from the search UI
+- **Keyboard-Driven** — Full keyboard navigation, no mouse needed
 
 ## Usage
+
 ```
 $ zeno help
 Zeno is a command and snippet cheat sheet manager. Write your
-pet peeve commands to a DB with sexy lipgloss on them and retrieve when needed.
+oft-used commands to a DB and retrieve them when needed.
 
 Usage:
   zeno            Start search UI
@@ -17,18 +31,113 @@ Usage:
 Environment:
   ZENO_NO_AI=1    Disable AI helpers when adding commands
 ```
-- `zeno [search]` opens a TUI screen: the left side has a list of commands with a smart fuzzy filter, while the reading pane on the right shows the command with syntax highlighting and formatting, its title and description as well as meta-info. Selecting a command with Enter copies it to clipboard and returns to the shell.
-- `zeno add` loads a small input form, where you enter a short title for your command plus the command itself (automatically grabbed from X clipboard if already copied) and the language. The languages have smart sorting and the right one should be at the top. OpenAI completion endpoints will then phrase a short description of the command and add some keywords, and the record is saved to MySQL/MariaDB.
 
-The filter and sorting mechanism is adaptive and will present hits ordered by (sort of) smart metrics. Yet to be added is vector space embedding of the codeblock records for similarity searching.
+### Search UI (`zeno` or `zeno search`)
 
-## Deps & Installation
+| Key | Action |
+|-----|--------|
+| `↑/↓` | Navigate command list |
+| `Enter` | Copy selected command to clipboard and exit |
+| `Esc` | Clear filter / Exit |
+| `Ctrl+E` | Edit selected command |
+| `Ctrl+D` | Delete selected command (with confirmation) |
+| Type | Fuzzy filter across all fields |
 
-You need Go and MariaDB and have to have the DB set up. Create a DB and user, set the env vars `$ZENODB_NAME`, `$ZENODB_USER`, `$ZENODB_PASS`, and for remote connections also `$ZENODB_HOST`, and then clone the repo and import the schema.
+The left panel shows the command list with title and description. The right panel displays the full code with syntax highlighting, title, description, language, formatters, keywords, usage count, and last used timestamp.
 
-To install, just run `make` and `make install` form the repo root.
+### Add Command (`zeno add`)
 
-For the AI description support, you need an OpenAI API key under `$OPENAI_API_KEY`.
+Interactive form flow:
 
----
+1. **Title** — Short name for the command
+2. **Code** — The command/snippet (auto-filled from clipboard if available)
+3. **Language** — Programming language (sorted by usage frequency)
+4. **Formatters** — Optional formatter tools (e.g., `prettier`, `black`)
 
+AI automatically generates a description and extracts keywords if `$OPENAI_API_KEY` is set. Set `ZENO_NO_AI=1` to disable.
+
+### Example Workflow
+
+```bash
+# Copy a command to clipboard
+$ echo 'docker ps --filter "status=running" --format "table {{.Names}}\t{{.Status}}"' | pbcopy
+
+# Add it
+$ zeno add
+  Title: List running containers
+  Code: [pasted from clipboard]
+  Language: bash
+  Formatters: -
+  Description: [AI-generated: Lists all running Docker containers...]
+  Keywords: [docker, containers, running, ps]
+
+# Later, find it
+$ zeno search
+  [type: docker running]
+  → Select with Enter → copied to clipboard
+```
+
+## Requirements
+
+- Go 1.24+
+- MariaDB (or MySQL-compatible database)
+- OpenAI API key (optional, for AI descriptions)
+
+## Installation
+
+### 1. Database Setup
+
+Create a database and user:
+
+```sql
+CREATE DATABASE zeno;
+CREATE USER 'zeno'@'localhost' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON zeno.* TO 'zeno'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Import the schema:
+
+```bash
+mysql -u zeno -p zeno < zenoschema.sql
+```
+
+### 2. Environment Variables
+
+```bash
+export ZENODB_USER=zeno
+export ZENODB_PASS=your_password
+export ZENODB_HOST=localhost  # optional, defaults to localhost
+export ZENODB_PORT=3306      # optional, defaults to 3306
+export ZENODB_NAME=zeno
+export OPENAI_API_KEY=sk-... # optional, for AI descriptions
+```
+
+### 3. Build & Install
+
+```bash
+git clone https://github.com/fsncps/zeno.git
+cd zeno
+make
+sudo make install  # installs to /usr/local/bin/zeno
+```
+
+## Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `language` | Programming languages with optional formatter binary |
+| `command` | Snippets (title, description, code, keywords, embedding, usage count) |
+| `search_term` | Unique search terms with usage count |
+| `search_hit` | Links terms to commands with per-pair hit counts for adaptive ranking |
+
+## Roadmap
+
+- [ ] Vector embeddings for semantic similarity search
+- [ ] Tag-based organization
+- [ ] Import/export functionality
+- [ ] Multi-database support
+
+## License
+
+MIT
